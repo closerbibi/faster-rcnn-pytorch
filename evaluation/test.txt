@@ -1,0 +1,26 @@
+chair
+precision: 88/1109 = 7.9% 
+recall: 88/734 = 12.0% 
+AP: 2.140729
+
+table
+precision: 44/408 = 10.8% 
+recall: 44/139 = 31.7% 
+AP: 8.129044
+
+sofa
+precision: 53/243 = 21.8% 
+recall: 53/94 = 56.4% 
+AP: 38.089572
+
+bed
+precision: 117/310 = 37.7% 
+recall: 117/138 = 84.8% 
+AP: 76.503174
+
+toilet
+precision: 10/53 = 18.9% 
+recall: 10/18 = 55.6% 
+AP: 34.676397
+
+mAP: 0.319078
