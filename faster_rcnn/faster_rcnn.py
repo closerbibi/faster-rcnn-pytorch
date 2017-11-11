@@ -18,7 +18,7 @@ from network import Conv2d, FC
 # from roi_pooling.modules.roi_pool_py import RoIPool
 from roi_pooling.modules.roi_pool import RoIPool
 from vgg16 import VGG16
-from resnet import resnet152
+from resnet import resnet50
 
 
 def nms_detections(pred_boxes, scores, nms_thresh, inds=None):
@@ -45,10 +45,10 @@ class RPN(nn.Module):
         
         # ResNet 152, gabriel
         # remove AVG pooling
-        self.features = resnet152(pretrained=True)
-        self.conv1 = Conv2d(2048, 2048, 3, same_padding=True)
-        self.score_conv = Conv2d(2048, len(self.anchor_scales) * 3 * 2, 1, relu=False, same_padding=False)
-        self.bbox_conv = Conv2d(2048, len(self.anchor_scales) * 3 * 4, 1, relu=False, same_padding=False)
+        self.features = resnet50()
+        self.conv1 = Conv2d(2048, 512, 3, same_padding=True)
+        self.score_conv = Conv2d(512, len(self.anchor_scales) * 3 * 2, 1, relu=False, same_padding=False)
+        self.bbox_conv = Conv2d(512, len(self.anchor_scales) * 3 * 4, 1, relu=False, same_padding=False)
 
         # loss
         self.cross_entropy = None
@@ -206,11 +206,14 @@ class FasterRCNN(nn.Module):
             self.n_classes = len(classes)
 
         self.rpn = RPN()
-        self.roi_pool = RoIPool(7, 7, 1.0/16)
-        # VGG16
+        ######## VGG16############
+        #self.roi_pool = RoIPool(7, 7, 1.0/16)
         #self.fc6 = FC(512 * 7 * 7, 4096)
-        # ResNet 152, gabriel
-        self.fc6 = FC(2048 * 7 * 7, 4096)
+        ######## ResNet ,gabriel  ########
+        self.roi_pool = RoIPool(7, 7, 1.0/16)
+        self.fc6 = FC(512 * 7 * 7, 4096)
+        #################################
+        
         self.fc7 = FC(4096, 4096)
         self.score_fc = FC(4096, self.n_classes, relu=False)
         self.bbox_fc = FC(4096, self.n_classes * 4, relu=False)

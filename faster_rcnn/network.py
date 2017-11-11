@@ -83,6 +83,49 @@ def load_pretrained_npy(faster_rcnn_model, fname):
         frcnn_dict[key].copy_(param)
 
 
+def load_resnet_weight(net, weight_path):
+    import torch
+    params = torch.load(weight_path)
+    remain_keys_p = params.keys()
+    net_own_state = net.state_dict()
+    remain_keys_n = net_own_state.keys()
+    #for name in params.keys():
+    #    if 'conv' in name:
+    #        print(name)
+    #for name in net_own_state.keys():
+    #    if 'conv' in name:
+    #        print(name)
+    for name, val in net_own_state.items():
+        try:
+            adapted_name = 'resnet'+name.split('rpn.features')[1]
+        except:
+            print('name or dim. inconsistent {}, passing'.format(name))
+            continue
+        if adapted_name not in params.keys():
+            print('{} not in the weight file'.format(name))
+            continue
+        try:
+            val = val.data
+        except:
+            pass
+        remain_keys_p.remove(adapted_name)
+        remain_keys_n.remove(name)
+        assert(net_own_state[name].size() == params[adapted_name].size())
+        net_own_state[name].copy_(params[adapted_name])
+    pdb.set_trace()
+
+    # fc6 fc7
+    frcnn_dict = faster_rcnn_model.state_dict()
+    pairs = {'fc6.fc': 'fc6', 'fc7.fc': 'fc7'}
+    for k, v in pairs.items():
+        key = '{}.weight'.format(k)
+        param = torch.from_numpy(params[v]['weights']).permute(1, 0)
+        frcnn_dict[key].copy_(param)
+
+        key = '{}.bias'.format(k)
+        param = torch.from_numpy(params[v]['biases'])
+        frcnn_dict[key].copy_(param)
+
 def np_to_variable(x, is_cuda=True, dtype=torch.FloatTensor):
     v = Variable(torch.from_numpy(x).type(dtype))
     if is_cuda:

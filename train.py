@@ -15,6 +15,9 @@ from faster_rcnn.roi_data_layer.layer import RoIDataLayer
 from faster_rcnn.datasets.factory import get_imdb
 from faster_rcnn.fast_rcnn.config import cfg, cfg_from_file
 
+import subprocess
+from logger import Logger
+
 try:
     from termcolor import cprint
 except ImportError:
@@ -37,11 +40,12 @@ def log_print(text, color=None, on_color=None, attrs=None):
 # hyper-parameters
 # ------------
 #imdb_name = 'voc_2007_trainval'
+logger = Logger('./tb-logs')
 imdb_name = 'inria_train'
 cfg_file = 'experiments/cfgs/faster_rcnn_end2end.yml'
 pretrained_model = 'data/pretrain_model/VGG_imagenet.npy'
 #pretrained_model = 'models/gupta_19classes/faster_rcnn_100000.h5'
-output_dir = 'models/more_anchor_size'
+output_dir = 'models/resnet50-pooling'
 
 start_step = 0
 end_step = 160000
@@ -50,7 +54,7 @@ lr_decay = 1./10
 print 'iter : %d, step_size : %s, lr_decay : %f'%(end_step, lr_decay_steps, lr_decay)
 rand_seed = 1024
 _DEBUG = True
-use_tensorboard = False#True
+use_tensorboard = True
 remove_all_log = False   # remove all historical experiments in TensorBoard
 exp_name = None # the previous experiment name in TensorBoard
 
@@ -66,7 +70,7 @@ lr = cfg.TRAIN.LEARNING_RATE
 momentum = cfg.TRAIN.MOMENTUM
 weight_decay = cfg.TRAIN.WEIGHT_DECAY
 #disp_interval = cfg.TRAIN.DISPLAY
-disp_interval = 1
+disp_interval = 100
 log_interval = cfg.TRAIN.LOG_IMAGE_ITERS
 
 # load data
@@ -79,8 +83,16 @@ data_layer = RoIDataLayer(roidb, imdb.num_classes)
 # load net
 net = FasterRCNN(classes=imdb.classes, debug=_DEBUG)
 network.weights_normal_init(net, dev=0.01)
+
+# VGG
 #network.load_pretrained_npy(net, pretrained_model)
 
+# resnet
+weight_path = {
+    'resnet50coco': '/home/closerbibi/.torch/models/res50_faster_rcnn_iter_1190000.pth',
+    'myres101': '/home/closerbibi/workspace/pytorch-repo/frcnn/frcnn-resnet/output/default/voc_2007_trainval/default/res101_faster_rcnn_iter_70000.pth'
+}
+network.load_resnet_weight(net, weight_path['myres101'])
 
 # model_file = '/media/longc/Data/models/VGGnet_fast_rcnn_iter_70000.h5'
 # model_file = 'models/saved_model3/faster_rcnn_60000.h5'
@@ -100,18 +112,6 @@ optimizer = torch.optim.SGD(params[8:], lr=lr, momentum=momentum, weight_decay=w
 if not os.path.exists(output_dir):
     os.makedirs(output_dir)
 
-# tensorboad
-use_tensorboard = use_tensorboard and CrayonClient is not None
-if use_tensorboard:
-    #cc = CrayonClient(hostname='127.0.0.1')
-    cc = CrayonClient(hostname='140.114.27.225')
-    if remove_all_log:
-        cc.remove_all_experiments()
-    if exp_name is None:
-        exp_name = datetime.now().strftime('vgg16_%m-%d_%H-%M')
-        exp = cc.create_experiment(exp_name)
-    else:
-        exp = cc.open_experiment(exp_name)
 
 # training
 train_loss = 0
@@ -121,7 +121,7 @@ re_cnt = False
 t = Timer()
 t.tic()
 for step in range(start_step, end_step+1):
-    print step
+    #print step
     # get one batch
     blobs = data_layer.forward()
     im_data = blobs['data']
@@ -150,6 +150,7 @@ for step in range(start_step, end_step+1):
     network.clip_gradient(net, 10.)
     optimizer.step()
     #pdb.set_trace()
+    total_loss = net.rpn.cross_entropy.data.cpu().numpy()[0]+ net.rpn.loss_box.data.cpu().numpy()[0]+net.cross_entropy.data.cpu().numpy()[0]+net.loss_box.data.cpu().numpy()[0]
     if step % disp_interval == 0:
         duration = t.toc(average=False)
         fps = step_cnt / duration
@@ -163,21 +164,22 @@ for step in range(start_step, end_step+1):
             log_print('\trpn_cls: %.4f, rpn_box: %.4f, rcnn_cls: %.4f, rcnn_box: %.4f, \ntotal loss: %.4f' % (
                 net.rpn.cross_entropy.data.cpu().numpy()[0], net.rpn.loss_box.data.cpu().numpy()[0],
                 net.cross_entropy.data.cpu().numpy()[0], net.loss_box.data.cpu().numpy()[0],
-                net.rpn.cross_entropy.data.cpu().numpy()[0]+ net.rpn.loss_box.data.cpu().numpy()[0]+net.cross_entropy.data.cpu().numpy()[0]+net.loss_box.data.cpu().numpy()[0]))
+                total_loss))
             #print 'run'
         re_cnt = True
 
     if use_tensorboard and step % log_interval == 0:
-        exp.add_scalar_value('train_loss', train_loss / step_cnt, step=step)
-        exp.add_scalar_value('learning_rate', lr, step=step)
-        if _DEBUG:
-            exp.add_scalar_value('true_positive', tp/fg*100., step=step)
-            exp.add_scalar_value('true_negative', tf/bg*100., step=step)
-            losses = {'rpn_cls': float(net.rpn.cross_entropy.data.cpu().numpy()[0]),
-                      'rpn_box': float(net.rpn.loss_box.data.cpu().numpy()[0]),
-                      'rcnn_cls': float(net.cross_entropy.data.cpu().numpy()[0]),
-                      'rcnn_box': float(net.loss_box.data.cpu().numpy()[0])}
-            exp.add_scalar_dict(losses, step=step)
+        info = {
+            'train_loss': loss.data[0],
+            'current_total_loss': total_loss,
+            'learning_rate': lr,
+            'rpn_cls': float(net.rpn.cross_entropy.data.cpu().numpy()[0]),
+            'rpn_box': float(net.rpn.loss_box.data.cpu().numpy()[0]),
+            'rcnn_cls': float(net.cross_entropy.data.cpu().numpy()[0]),
+            'rcnn_box': float(net.loss_box.data.cpu().numpy()[0]),
+        }
+        for tag, value in info.items():
+            logger.scalar_summary(tag, value, step)
 
     if (step % 20000 == 0) and step > 0:
         save_name = os.path.join(output_dir, 'faster_rcnn_{}.h5'.format(step))
@@ -189,6 +191,7 @@ for step in range(start_step, end_step+1):
     if step in lr_decay_steps:
         lr *= lr_decay
         optimizer = torch.optim.SGD(params[8:], lr=lr, momentum=momentum, weight_decay=weight_decay)
+        #optimizer = torch.optim.Adam(params[8:], lr=lr)
 
     if re_cnt:
         tp, tf, fg, bg = 0., 0., 0, 0
@@ -197,3 +200,8 @@ for step in range(start_step, end_step+1):
         t.tic()
         re_cnt = False
 
+# evaluation
+cut_name = save_name.split('models/')[1].split('/')[0]
+bashCommand = "./test.py --name {} --it {:d}".format(cut_name, step)
+process = subprocess.Popen(bashCommand.split(), stdout=subprocess.PIPE)
+output, error = process.communicate()

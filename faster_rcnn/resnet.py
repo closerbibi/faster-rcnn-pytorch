@@ -24,6 +24,10 @@ def load_my_state_dict(net, weight_path):
     for name, val in params.items():
         if name not in net_own_state:
             continue
+        try:
+            val = val.data
+        except:
+            pass
         net_own_state[name].copy_(val)
 
 def conv3x3(in_planes, out_planes, stride=1):
@@ -118,7 +122,7 @@ class ResNet(nn.Module):
         self.layer1 = self._make_layer(block, 64, layers[0])
         self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
         self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
-        self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
+        self.layer4 = self._make_layer(block, 512, layers[3], stride=1) # gabriel
         # self.avgpool = nn.AvgPool2d(7, stride=1)
         # self.fc = nn.Linear(512 * block.expansion, num_classes)
 
@@ -197,7 +201,9 @@ def resnet50(pretrained=False, **kwargs):
     """
     model = ResNet(Bottleneck, [3, 4, 6, 3], **kwargs)
     if pretrained:
-        model.load_state_dict(model_zoo.load_url(model_urls['resnet50']))
+        model_zoo.load_url(model_urls['resnet50'])
+        weight_path = '/home/closerbibi/.torch/models/resnet50-19c8e357.pth'
+        load_my_state_dict(model, weight_path)
     return model
 
 
@@ -209,7 +215,9 @@ def resnet101(pretrained=False, **kwargs):
     """
     model = ResNet(Bottleneck, [3, 4, 23, 3], **kwargs)
     if pretrained:
-        model.load_state_dict(model_zoo.load_url(model_urls['resnet101']))
+        model_zoo.load_url(model_urls['resnet101'])
+        weight_path = '/home/closerbibi/.torch/models/resnet101-5d3b4d8f.pth'
+        load_my_state_dict(model, weight_path)
     return model
 
 

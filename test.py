@@ -15,42 +15,8 @@ from faster_rcnn.fast_rcnn.bbox_transform import bbox_transform_inv, clip_boxes
 from faster_rcnn.datasets.factory import get_imdb
 from faster_rcnn.fast_rcnn.config import cfg, cfg_from_file, get_output_dir
 import subprocess
+import argparse
 
-# hyper-parameters
-# ------------
-#imdb_name = 'voc_2007_test'
-imdb_name = 'inria_test'
-#imdb_name = 'inria_train'
-cfg_file = 'experiments/cfgs/faster_rcnn_end2end.yml'
-# trained_model = '/media/longc/Data/models/VGGnet_fast_rcnn_iter_70000.h5'
-
-iter_choose = '160000'
-
-#save_name = 'noroof_190'
-#save_name = 'gupta_19classes'
-save_name = 'more_anchor_size'
-#trained_model = 'models/HHA/faster_rcnn_%s.h5'%iter_choose # all train set
-#trained_model = 'models/saved_model3/faster_rcnn_%s.h5'%iter_choose  # train test split set
-#trained_model = 'models/saved_model_my_split/faster_rcnn_%s.h5'%iter_choose  # train test split set
-trained_model = 'models/%s/faster_rcnn_%s.h5'%(save_name, iter_choose)  # train test split set
-#trained_model = 'VGGnet_fast_rcnn_iter_70000.h5'
-
-rand_seed = 1024
-
-max_per_image = 300
-thresh = 0.05
-vis = False
-
-# ------------
-
-if rand_seed is not None:
-    np.random.seed(rand_seed)
-
-if rand_seed is not None:
-    np.random.seed(rand_seed)
-
-# load config
-cfg_from_file(cfg_file)
 
 
 def vis_detections(im, class_name, dets, thresh=0.8):
@@ -144,8 +110,9 @@ def test_net(name, net, imdb, max_per_image=300, thresh=0.05, vis=False):
                     all_boxes[j][i] = all_boxes[j][i][keep, :]
         nms_time = _t['misc'].toc(average=False)
 
-        print 'im_detect: {:d}/{:d} {:.3f}s {:.3f}s' \
-            .format(i + 1, num_images, detect_time, nms_time)
+        if (i+1) % 100 == 0:
+            print 'im_detect: {:d}/{:d} {:.3f}s {:.3f}s' \
+                .format(i + 1, num_images, detect_time, nms_time)
 
         if vis:
             cv2.imshow('test', im2show)
@@ -180,6 +147,48 @@ def test_net(name, net, imdb, max_per_image=300, thresh=0.05, vis=False):
     '''
     
 if __name__ == '__main__':
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--name')
+    parser.add_argument('--it')
+    parser.add_argument('--rset')
+    args = parser.parse_args()
+    # hyper-parameters
+    # ------------
+    #imdb_name = 'voc_2007_test'
+    imdb_name = 'inria_%s'% args.rset
+    #imdb_name = 'inria_train'
+    cfg_file = 'experiments/cfgs/faster_rcnn_end2end.yml'
+    # trained_model = '/media/longc/Data/models/VGGnet_fast_rcnn_iter_70000.h5'
+
+    iter_choose = args.it
+
+    #save_name = 'noroof_190'
+    #save_name = 'gupta_19classes'
+    save_name = args.name
+    #trained_model = 'models/HHA/faster_rcnn_%s.h5'%iter_choose # all train set
+    #trained_model = 'models/saved_model3/faster_rcnn_%s.h5'%iter_choose  # train test split set
+    #trained_model = 'models/saved_model_my_split/faster_rcnn_%s.h5'%iter_choose  # train test split set
+    trained_model = 'models/%s/faster_rcnn_%s.h5'%(save_name, iter_choose)  # train test split set
+    #trained_model = 'VGGnet_fast_rcnn_iter_70000.h5'
+
+    rand_seed = 1024
+
+    max_per_image = 300
+    thresh = 0.05
+    vis = False
+
+    # ------------
+
+    if rand_seed is not None:
+        np.random.seed(rand_seed)
+
+    if rand_seed is not None:
+        np.random.seed(rand_seed)
+
+    # load config
+    cfg_from_file(cfg_file)
+
     # load data
     imdb = get_imdb(imdb_name)
     imdb.competition_mode(on=True)
