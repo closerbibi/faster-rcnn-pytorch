@@ -18,7 +18,8 @@ from network import Conv2d, FC
 # from roi_pooling.modules.roi_pool_py import RoIPool
 from roi_pooling.modules.roi_pool import RoIPool
 from vgg16 import VGG16
-from resnet import resnet50
+from resnet import resnet101
+from resnet import resfc7
 
 
 def nms_detections(pred_boxes, scores, nms_thresh, inds=None):
@@ -45,8 +46,8 @@ class RPN(nn.Module):
         
         # ResNet 152, gabriel
         # remove AVG pooling
-        self.features = resnet50()
-        self.conv1 = Conv2d(2048, 512, 3, same_padding=True)
+        self.features = resnet101()
+        self.conv1 = Conv2d(1024, 512, 3, same_padding=True)
         self.score_conv = Conv2d(512, len(self.anchor_scales) * 3 * 2, 1, relu=False, same_padding=False)
         self.bbox_conv = Conv2d(512, len(self.anchor_scales) * 3 * 4, 1, relu=False, same_padding=False)
 
@@ -211,12 +212,14 @@ class FasterRCNN(nn.Module):
         #self.fc6 = FC(512 * 7 * 7, 4096)
         ######## ResNet ,gabriel  ########
         self.roi_pool = RoIPool(7, 7, 1.0/16)
-        self.fc6 = FC(512 * 7 * 7, 4096)
+        #self.fc6 = FC(512 * 7 * 7, 4096)
         #################################
         
-        self.fc7 = FC(4096, 4096)
-        self.score_fc = FC(4096, self.n_classes, relu=False)
-        self.bbox_fc = FC(4096, self.n_classes * 4, relu=False)
+        #self.fc7 = FC(2048, 2048)
+        # replace fc with resnet block 4
+        self.fc_feature = resfc7()
+        self.score_fc = FC(2048, self.n_classes, relu=False)
+        self.bbox_fc = FC(2048, self.n_classes * 4, relu=False)
 
         # loss
         self.cross_entropy = None
@@ -240,12 +243,13 @@ class FasterRCNN(nn.Module):
             rois = roi_data[0]
         # roi pool
         pooled_features = self.roi_pool(features, rois)
-        x = pooled_features.view(pooled_features.size()[0], -1)
-        x = self.fc6(x)
-        x = F.dropout(x, training=self.training)
-        x = self.fc7(x)
-        x = F.dropout(x, training=self.training)
+        #x = pooled_features.view(pooled_features.size()[0], -1)
+        #x = self.fc6(x)
+        #x = F.dropout(x, training=self.training)
+        x = self.fc_feature(pooled_features)
+        #x = F.dropout(x, training=self.training)
 
+        x = x.view(x.size()[0],-1)
         cls_score = self.score_fc(x)
         cls_prob = F.softmax(cls_score)
         bbox_pred = self.bbox_fc(x)

@@ -90,9 +90,10 @@ network.weights_normal_init(net, dev=0.01)
 # resnet
 weight_path = {
     'resnet50coco': '/home/closerbibi/.torch/models/res50_faster_rcnn_iter_1190000.pth',
-    'myres101': '/home/closerbibi/workspace/pytorch-repo/frcnn/frcnn-resnet/output/default/voc_2007_trainval/default/res101_faster_rcnn_iter_70000.pth'
+    'myres101': '/home/closerbibi/workspace/pytorch-repo/frcnn/frcnn-resnet/output/default/voc_2007_trainval/default/res101_faster_rcnn_iter_70000.pth',
+    'ruores101': '/home/closerbibi/.torch/models/res101_faster_rcnn_iter_110000.pth'
 }
-network.load_resnet_weight(net, weight_path['myres101'])
+network.load_resnet_weight(net, weight_path['ruores101'])
 
 # model_file = '/media/longc/Data/models/VGGnet_fast_rcnn_iter_70000.h5'
 # model_file = 'models/saved_model3/faster_rcnn_60000.h5'
@@ -129,7 +130,7 @@ for step in range(start_step, end_step+1):
     gt_boxes = blobs['gt_boxes']
     gt_ishard = blobs['gt_ishard']
     dontcare_areas = blobs['dontcare_areas']
-    print 'now at %s'%blobs['im_name']
+    #print 'now at %s'%blobs['im_name']
     #pdb.set_trace()
     # forward
     net(im_data, im_info, gt_boxes, gt_ishard, dontcare_areas)
