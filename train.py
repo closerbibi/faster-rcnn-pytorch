@@ -110,11 +110,10 @@ params = list(net.parameters())
 # adam doesn't need to update lr manually
 require_update = False
 #optimizer = torch.optim.Adam(params[-8:], lr=lr)
-optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, params[8:]), lr=lr)
+optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, params), lr=lr)
 #optimizer = torch.optim.SGD(params[8:], lr=lr, momentum=momentum, weight_decay=weight_decay)
 #optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, params[8:]), \
 #                        lr=lr, momentum=momentum, weight_decay=weight_decay)
-pdb.set_trace()
 if not os.path.exists(output_dir):
     os.makedirs(output_dir)
 
@@ -187,14 +186,14 @@ for step in range(start_step, end_step+1):
         for tag, value in info.items():
             logger.scalar_summary(tag, value, step)
 
-    if (step % 20000 == 0) and step > 0:
+    if (step % 40000 == 0) and step > 0:
         save_name = os.path.join(output_dir, 'faster_rcnn_{}.h5'.format(step))
         network.save_net(save_name, net)
         print('save model: {}'.format(save_name))
         # evaluation
         print('Now evaluating...')
         cut_name = save_name.split('models/')[1].split('/')[0]
-        bashCommand = "./test.py --name {} --it {:d} --rset {}".format(cut_name, step, test)
+        bashCommand = "./test.py --name {} --it {:d} --rset {}".format(cut_name, step, 'test')
         process = subprocess.Popen(bashCommand.split(), stdout=subprocess.PIPE)
         output, error = process.communicate()
     # plot loss to jpg file
