@@ -45,7 +45,7 @@ imdb_name = 'inria_train'
 cfg_file = 'experiments/cfgs/faster_rcnn_end2end.yml'
 pretrained_model = 'data/pretrain_model/VGG_imagenet.npy'
 #pretrained_model = 'models/gupta_19classes/faster_rcnn_100000.h5'
-output_dir = 'models/resnet50-pooling'
+output_dir = 'models/resnet101-bn-block1-fix'
 
 start_step = 0
 end_step = 160000
@@ -107,9 +107,14 @@ net.cuda()
 net.train()
 
 params = list(net.parameters())
+# adam doesn't need to update lr manually
+require_update = False
 #optimizer = torch.optim.Adam(params[-8:], lr=lr)
-optimizer = torch.optim.SGD(params[8:], lr=lr, momentum=momentum, weight_decay=weight_decay)
-#pdb.set_trace()
+optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, params[8:]), lr=lr)
+#optimizer = torch.optim.SGD(params[8:], lr=lr, momentum=momentum, weight_decay=weight_decay)
+#optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, params[8:]), \
+#                        lr=lr, momentum=momentum, weight_decay=weight_decay)
+pdb.set_trace()
 if not os.path.exists(output_dir):
     os.makedirs(output_dir)
 
@@ -186,13 +191,20 @@ for step in range(start_step, end_step+1):
         save_name = os.path.join(output_dir, 'faster_rcnn_{}.h5'.format(step))
         network.save_net(save_name, net)
         print('save model: {}'.format(save_name))
+        # evaluation
+        print('Now evaluating...')
+        cut_name = save_name.split('models/')[1].split('/')[0]
+        bashCommand = "./test.py --name {} --it {:d} --rset {}".format(cut_name, step, test)
+        process = subprocess.Popen(bashCommand.split(), stdout=subprocess.PIPE)
+        output, error = process.communicate()
     # plot loss to jpg file
     #if (step % 500 == 0) and step > 0:
     #    os.system('python /home/closerbibi/workspace/tools/plot_pytorch_loss.py --inputfile=/home/closerbibi/workspace/pytorch/faster-rcnn_HaoEvaluation/log/os.system("python /home/closerbibi/workspace/tools/plot_pytorch_loss.py --inputfile=/home/closerbibi/workspace/pytorch/faster-rcnn_HaoEvaluation/log/log_trying.txt')
-    if step in lr_decay_steps:
+    if step in lr_decay_steps and require_update:
         lr *= lr_decay
-        optimizer = torch.optim.SGD(params[8:], lr=lr, momentum=momentum, weight_decay=weight_decay)
-        #optimizer = torch.optim.Adam(params[8:], lr=lr)
+        #optimizer = torch.optim.SGD(params[8:], lr=lr, momentum=momentum, weight_decay=weight_decay)
+        optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, params[8:]), \
+                                lr=lr, momentum=momentum, weight_decay=weight_decay)
 
     if re_cnt:
         tp, tf, fg, bg = 0., 0., 0, 0
@@ -201,8 +213,3 @@ for step in range(start_step, end_step+1):
         t.tic()
         re_cnt = False
 
-# evaluation
-cut_name = save_name.split('models/')[1].split('/')[0]
-bashCommand = "./test.py --name {} --it {:d}".format(cut_name, step)
-process = subprocess.Popen(bashCommand.split(), stdout=subprocess.PIPE)
-output, error = process.communicate()

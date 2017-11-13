@@ -20,6 +20,7 @@ from roi_pooling.modules.roi_pool import RoIPool
 from vgg16 import VGG16
 from resnet import resnet101
 from resnet import resfc7
+from fast_rcnn.config import cfg
 
 
 def nms_detections(pred_boxes, scores, nms_thresh, inds=None):
@@ -47,6 +48,16 @@ class RPN(nn.Module):
         # ResNet 152, gabriel
         # remove AVG pooling
         self.features = resnet101()
+        # gabriel
+        # Set batchnorm always in eval mode during training
+        def set_bn_fix(m):
+            classname = m.__class__.__name__
+            if classname.find('BatchNorm') != -1:
+                for p in m.parameters(): p.requires_grad=False
+        if not cfg.TRAIN.BN_TRAIN:
+            self.features.apply(set_bn_fix)
+
+
         self.conv1 = Conv2d(1024, 512, 3, same_padding=True)
         self.score_conv = Conv2d(512, len(self.anchor_scales) * 3 * 2, 1, relu=False, same_padding=False)
         self.bbox_conv = Conv2d(512, len(self.anchor_scales) * 3 * 4, 1, relu=False, same_padding=False)
@@ -218,6 +229,15 @@ class FasterRCNN(nn.Module):
         #self.fc7 = FC(2048, 2048)
         # replace fc with resnet block 4
         self.fc_feature = resfc7()
+        # gabriel
+        # Set batchnorm always in eval mode during training
+        def set_bn_fix(m):
+            classname = m.__class__.__name__
+            if classname.find('BatchNorm') != -1:
+                for p in m.parameters(): p.requires_grad=False
+        if not cfg.TRAIN.BN_TRAIN:
+            self.fc_feature.apply(set_bn_fix)
+
         self.score_fc = FC(2048, self.n_classes, relu=False)
         self.bbox_fc = FC(2048, self.n_classes * 4, relu=False)
 
