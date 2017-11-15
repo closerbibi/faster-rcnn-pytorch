@@ -45,7 +45,7 @@ imdb_name = 'inria_train'
 cfg_file = 'experiments/cfgs/faster_rcnn_end2end.yml'
 pretrained_model = 'data/pretrain_model/VGG_imagenet.npy'
 #pretrained_model = 'models/gupta_19classes/faster_rcnn_100000.h5'
-output_dir = 'models/resnet101-bn-block1-fix'
+output_dir = 'models/resnet101-bn-block1-fix-sgd'
 
 start_step = 0
 end_step = 160000
@@ -55,7 +55,6 @@ print 'iter : %d, step_size : %s, lr_decay : %f'%(end_step, lr_decay_steps, lr_d
 rand_seed = 1024
 _DEBUG = True
 use_tensorboard = True
-remove_all_log = False   # remove all historical experiments in TensorBoard
 exp_name = None # the previous experiment name in TensorBoard
 
 # ------------
@@ -109,11 +108,10 @@ net.train()
 params = list(net.parameters())
 # adam doesn't need to update lr manually
 require_update = False
-#optimizer = torch.optim.Adam(params[-8:], lr=lr)
 optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, params), lr=lr)
 #optimizer = torch.optim.SGD(params[8:], lr=lr, momentum=momentum, weight_decay=weight_decay)
-#optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, params[8:]), \
-#                        lr=lr, momentum=momentum, weight_decay=weight_decay)
+optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, params), \
+                        lr=lr, momentum=momentum, weight_decay=weight_decay)
 if not os.path.exists(output_dir):
     os.makedirs(output_dir)
 
@@ -186,16 +184,22 @@ for step in range(start_step, end_step+1):
         for tag, value in info.items():
             logger.scalar_summary(tag, value, step)
 
-    if (step % 40000 == 0) and step > 0:
+    if (step % 10000 == 0) and step > 0:
         save_name = os.path.join(output_dir, 'faster_rcnn_{}.h5'.format(step))
         network.save_net(save_name, net)
         print('save model: {}'.format(save_name))
         # evaluation
         print('Now evaluating...')
+        try:
+            bashCommand0 = "rm data/cache/annots.pk"
+            process0 = subprocess.Popen(bashCommand0.split(), stdout=subprocess.PIPE)
+            output, error = process0.communicate()
+        except:
+            pass
         cut_name = save_name.split('models/')[1].split('/')[0]
-        bashCommand = "./test.py --name {} --it {:d} --rset {}".format(cut_name, step, 'test')
-        process = subprocess.Popen(bashCommand.split(), stdout=subprocess.PIPE)
-        output, error = process.communicate()
+        bashCommand1 = "./test.py --name {} --it {:d} --rset {}".format(cut_name, step, 'test')
+        process1 = subprocess.Popen(bashCommand1.split(), stdout=subprocess.PIPE)
+        output, error = process1.communicate()
     # plot loss to jpg file
     #if (step % 500 == 0) and step > 0:
     #    os.system('python /home/closerbibi/workspace/tools/plot_pytorch_loss.py --inputfile=/home/closerbibi/workspace/pytorch/faster-rcnn_HaoEvaluation/log/os.system("python /home/closerbibi/workspace/tools/plot_pytorch_loss.py --inputfile=/home/closerbibi/workspace/pytorch/faster-rcnn_HaoEvaluation/log/log_trying.txt')
