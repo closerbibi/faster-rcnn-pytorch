@@ -176,11 +176,12 @@ for step in range(start_step, end_step+1):
         for tag, value in info.items():
             logger.scalar_summary(tag, value, step)
 
-    if (step % 10000 == 0) and step > 0:
+    if (step % 20000 == 0) and step > 0:
         save_name = os.path.join(output_dir, 'faster_rcnn_{}.h5'.format(step))
         network.save_net(save_name, net)
         print('save model: {}'.format(save_name))
         # evaluation
+        '''
         print('Now evaluating...')
         try:
             bashCommand0 = "rm data/cache/annots.pkl"
@@ -192,6 +193,7 @@ for step in range(start_step, end_step+1):
         bashCommand1 = "./test.py --name {} --it {:d} --rset {}".format(cut_name, step, 'test')
         process1 = subprocess.Popen(bashCommand1.split(), stdout=subprocess.PIPE)
         output, error = process1.communicate()
+        '''
     if step in lr_decay_steps and require_update:
         lr *= lr_decay
         optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, params), \

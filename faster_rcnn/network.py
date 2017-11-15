@@ -96,16 +96,10 @@ def load_resnet_weight(net, weight_path):
     #    if 'conv' in name:
     #        print(name)
     for name, val in net_own_state.items():
-        if 'rpn.conv1.conv' in name:
-            adapted_name = 'rpn_net.'+name.split('.')[-1]
-        elif 'rpn.score_conv' in name:
-            adapted_name = 'rpn_cls_score_net.'+name.split('.')[-1]
-        elif 'rpn.bbox_conv' in name:
-            adapted_name = 'rpn_bbox_pred_net.'+name.split('.')[-1]
-        elif 'rpn.features' in name:
-            adapted_name = 'resnet'+name.split('rpn.features')[1]
-        elif 'fc_feature' in name:
-            adapted_name = 'resnet'+name.split('fc_feature')[1]
+        if 'fc_feature' in name:
+            adapted_name = name.split('fc_feature.')[1]
+        elif 'layer' in name:
+            adapted_name = name.split('rpn.features')[1]
         else:
             print('name or dim. inconsistent {}, passing'.format(name))
             continue
