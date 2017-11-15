@@ -1,54 +1,58 @@
-import imagenet3d
+__author__ = 'yuxiang'
+
+import datasets
+import datasets.kitti_tracking
 import os
 import PIL
+import datasets.imdb
 import numpy as np
 import scipy.sparse
+from utils.cython_bbox import bbox_overlaps
+from utils.boxes_grid import get_boxes_grid
 import subprocess
 import cPickle
+from fast_rcnn.config import cfg
 import math
-import sys
+from rpn_msr.generate_anchors import generate_anchors
 
-from .imdb import imdb
-from .imdb import ROOT_DIR
-from ..utils.cython_bbox import bbox_overlaps
-from ..utils.boxes_grid import get_boxes_grid
-
-# TODO: make fast_rcnn irrelevant
-# >>>> obsolete, because it depends on sth outside of this project
-from ..fast_rcnn.config import cfg
-from ..rpn_msr.generate_anchors import generate_anchors
-# <<<< obsolete
-
-
-class imagenet3d(imdb):
-    def __init__(self, image_set, imagenet3d_path=None):
-        imdb.__init__(self, 'imagenet3d_' + image_set)
+class kitti_tracking(datasets.imdb):
+    def __init__(self, image_set, seq_name, kitti_tracking_path=None):
+        datasets.imdb.__init__(self, 'kitti_tracking_' + image_set + '_' + seq_name)
         self._image_set = image_set
-        self._imagenet3d_path = self._get_default_path() if imagenet3d_path is None \
-                            else imagenet3d_path
-        self._data_path = os.path.join(self._imagenet3d_path, 'Images')
-        self._classes = ('__background__', 'aeroplane', 'ashtray', 'backpack', 'basket', \
-             'bed', 'bench', 'bicycle', 'blackboard', 'boat', 'bookshelf', 'bottle', 'bucket', \
-             'bus', 'cabinet', 'calculator', 'camera', 'can', 'cap', 'car', 'cellphone', 'chair', \
-             'clock', 'coffee_maker', 'comb', 'computer', 'cup', 'desk_lamp', 'diningtable', \
-             'dishwasher', 'door', 'eraser', 'eyeglasses', 'fan', 'faucet', 'filing_cabinet', \
-             'fire_extinguisher', 'fish_tank', 'flashlight', 'fork', 'guitar', 'hair_dryer', \
-             'hammer', 'headphone', 'helmet', 'iron', 'jar', 'kettle', 'key', 'keyboard', 'knife', \
-             'laptop', 'lighter', 'mailbox', 'microphone', 'microwave', 'motorbike', 'mouse', \
-             'paintbrush', 'pan', 'pen', 'pencil', 'piano', 'pillow', 'plate', 'pot', 'printer', \
-             'racket', 'refrigerator', 'remote_control', 'rifle', 'road_pole', 'satellite_dish', \
-             'scissors', 'screwdriver', 'shoe', 'shovel', 'sign', 'skate', 'skateboard', 'slipper', \
-             'sofa', 'speaker', 'spoon', 'stapler', 'stove', 'suitcase', 'teapot', 'telephone', \
-             'toaster', 'toilet', 'toothbrush', 'train', 'trash_bin', 'trophy', 'tub', 'tvmonitor', \
-             'vending_machine', 'washing_machine', 'watch', 'wheelchair')
+        self._seq_name = seq_name
+        self._kitti_tracking_path = self._get_default_path() if kitti_tracking_path is None \
+                            else kitti_tracking_path
+        self._data_path = os.path.join(self._kitti_tracking_path, image_set, 'image_02')
+        self._classes = ('__background__', 'Car', 'Pedestrian', 'Cyclist')
         self._class_to_ind = dict(zip(self.classes, xrange(self.num_classes)))
-        self._image_ext = '.JPEG'
+        self._image_ext = '.png'
         self._image_index = self._load_image_set_index()
         # Default to roidb handler
         if cfg.IS_RPN:
             self._roidb_handler = self.gt_roidb
         else:
             self._roidb_handler = self.region_proposal_roidb
+
+        # num of subclasses
+        if image_set == 'training' and seq_name != 'trainval':
+            self._num_subclasses = 220 + 1
+        else:
+            self._num_subclasses = 472 + 1
+
+        # load the mapping for subcalss to class
+        if image_set == 'training' and seq_name != 'trainval':
+            filename = os.path.join(self._kitti_tracking_path, 'voxel_exemplars', 'train', 'mapping.txt')
+        else:
+            filename = os.path.join(self._kitti_tracking_path, 'voxel_exemplars', 'trainval', 'mapping.txt')
+        assert os.path.exists(filename), 'Path does not exist: {}'.format(filename)
+        
+        mapping = np.zeros(self._num_subclasses, dtype=np.int)
+        with open(filename) as f:
+            for line in f:
+                words = line.split()
+                subcls = int(words[0])
+                mapping[subcls] = self._class_to_ind[words[1]]
+        self._subclass_mapping = mapping
 
         self.config = {'top_k': 100000}
 
@@ -57,8 +61,8 @@ class imagenet3d(imdb):
         self._num_boxes_covered = np.zeros(self.num_classes, dtype=np.int)
         self._num_boxes_proposal = 0
 
-        assert os.path.exists(self._imagenet3d_path), \
-                'imagenet3d path does not exist: {}'.format(self._imagenet3d_path)
+        assert os.path.exists(self._kitti_tracking_path), \
+                'kitti_tracking path does not exist: {}'.format(self._kitti_tracking_path)
         assert os.path.exists(self._data_path), \
                 'Path does not exist: {}'.format(self._data_path)
 
@@ -82,26 +86,53 @@ class imagenet3d(imdb):
         """
         Load the indexes listed in this dataset's image set file.
         """
-        image_set_file = os.path.join(self._imagenet3d_path, 'Image_sets', self._image_set + '.txt')
-        assert os.path.exists(image_set_file), \
-                'Path does not exist: {}'.format(image_set_file)
 
-        with open(image_set_file) as f:
-            image_index = [x.rstrip('\n') for x in f.readlines()]
+        kitti_train_nums = [154, 447, 233, 144, 314, 297, 270, 800, 390, 803, 294, \
+                            373, 78, 340, 106, 376, 209, 145, 339, 1059, 837]
+
+        kitti_test_nums = [465, 147, 243, 257, 421, 809, 114, 215, 165, 349, 1176, \
+                           774, 694, 152, 850, 701, 510, 305, 180, 404, 173, 203, \
+                           436, 430, 316, 176, 170, 85, 175]
+
+        if self._seq_name == 'train' or self._seq_name == 'trainval':
+
+            assert self._image_set == 'training', 'Use train set or trainval set in testing'
+
+            if self._seq_name == 'train':
+                seq_index = [0, 1, 2, 3, 4, 5, 12, 13, 14, 15, 16]
+            else:
+                seq_index = range(0, 21)
+
+            # for each sequence
+            image_index = []
+            for i in xrange(len(seq_index)):
+                seq_idx = seq_index[i]
+                num = kitti_train_nums[seq_idx]
+                for j in xrange(num):
+                    image_index.append('{:04d}/{:06d}'.format(seq_idx, j))
+        else:
+            # a single sequence
+            seq_num = int(self._seq_name)
+            if self._image_set == 'training':
+                num = kitti_train_nums[seq_num]
+            else:
+                num = kitti_test_nums[seq_num]
+            image_index = []
+            for i in xrange(num):
+                image_index.append('{:04d}/{:06d}'.format(seq_num, i))
+
         return image_index
 
     def _get_default_path(self):
         """
-        Return the default path where imagenet3d is expected to be installed.
+        Return the default path where kitti_tracking is expected to be installed.
         """
-        return os.path.join(ROOT_DIR, 'data', 'ImageNet3D')
+        return os.path.join(datasets.ROOT_DIR, 'data', 'KITTI_Tracking')
 
 
     def gt_roidb(self):
         """
         Return the database of ground-truth regions of interest.
-
-        This function loads/saves from/to a cache file to speed up future calls.
         """
 
         cache_file = os.path.join(self.cache_path, self.name + '_' + cfg.SUBCLS_NAME + '_gt_roidb.pkl')
@@ -111,7 +142,7 @@ class imagenet3d(imdb):
             print '{} gt roidb loaded from {}'.format(self.name, cache_file)
             return roidb
 
-        gt_roidb = [self._load_imagenet3d_annotation(index)
+        gt_roidb = [self._load_kitti_voxel_exemplar_annotation(index)
                     for index in self.image_index]
 
         if cfg.IS_RPN:
@@ -128,65 +159,74 @@ class imagenet3d(imdb):
         return gt_roidb
 
 
-    def _load_imagenet3d_annotation(self, index):
+    def _load_kitti_voxel_exemplar_annotation(self, index):
         """
-        Load image and bounding boxes info from txt file in the imagenet3d format.
+        Load image and bounding boxes info from txt file in the KITTI voxel exemplar format.
         """
-
-        if self._image_set == 'test' or self._image_set == 'test_1' or self._image_set == 'test_2':
-            lines = []
+        if self._image_set == 'training' and self._seq_name != 'trainval':
+            prefix = 'train'
+        elif self._image_set == 'training':
+            prefix = 'trainval'
         else:
-            filename = os.path.join(self._imagenet3d_path, 'Labels', index + '.txt')
-            lines = []
-            with open(filename) as f:
-                for line in f:
-                    lines.append(line)
+            prefix = ''
 
+        if prefix == '':
+            lines = []
+            lines_flipped = []
+        else:
+            filename = os.path.join(self._kitti_tracking_path, cfg.SUBCLS_NAME, prefix, index + '.txt')
+            if os.path.exists(filename):
+                print filename
+
+                # the annotation file contains flipped objects    
+                lines = []
+                lines_flipped = []
+                with open(filename) as f:
+                    for line in f:
+                        words = line.split()
+                        subcls = int(words[1])
+                        is_flip = int(words[2])
+                        if subcls != -1:
+                            if is_flip == 0:
+                                lines.append(line)
+                            else:
+                                lines_flipped.append(line)
+            else:
+                lines = []
+                lines_flipped = []
+        
         num_objs = len(lines)
 
+        # store information of flipped objects
+        assert (num_objs == len(lines_flipped)), 'The number of flipped objects is not the same!'
+        gt_subclasses_flipped = np.zeros((num_objs), dtype=np.int32)
+        
+        for ix, line in enumerate(lines_flipped):
+            words = line.split()
+            subcls = int(words[1])
+            gt_subclasses_flipped[ix] = subcls
+
         boxes = np.zeros((num_objs, 4), dtype=np.float32)
-        viewpoints = np.zeros((num_objs, 3), dtype=np.float32)          # azimuth, elevation, in-plane rotation
-        viewpoints_flipped = np.zeros((num_objs, 3), dtype=np.float32)  # azimuth, elevation, in-plane rotation
         gt_classes = np.zeros((num_objs), dtype=np.int32)
+        gt_subclasses = np.zeros((num_objs), dtype=np.int32)
         overlaps = np.zeros((num_objs, self.num_classes), dtype=np.float32)
+        subindexes = np.zeros((num_objs, self.num_classes), dtype=np.int32)
+        subindexes_flipped = np.zeros((num_objs, self.num_classes), dtype=np.int32)
 
         for ix, line in enumerate(lines):
             words = line.split()
-            assert len(words) == 5 or len(words) == 8, 'Wrong label format: {}'.format(index)
             cls = self._class_to_ind[words[0]]
-            boxes[ix, :] = [float(n) for n in words[1:5]]
+            subcls = int(words[1])
+            boxes[ix, :] = [float(n) for n in words[3:7]]
             gt_classes[ix] = cls
+            gt_subclasses[ix] = subcls
             overlaps[ix, cls] = 1.0
-            if len(words) == 8:
-                viewpoints[ix, :] = [float(n) for n in words[5:8]]
-                # flip the viewpoint
-                viewpoints_flipped[ix, 0] = -viewpoints[ix, 0]  # azimuth
-                viewpoints_flipped[ix, 1] = viewpoints[ix, 1]   # elevation
-                viewpoints_flipped[ix, 2] = -viewpoints[ix, 2]  # in-plane rotation
-            else:
-                viewpoints[ix, :] = np.inf
-                viewpoints_flipped[ix, :] = np.inf
-
-        gt_subclasses = np.zeros((num_objs), dtype=np.int32)
-        gt_subclasses_flipped = np.zeros((num_objs), dtype=np.int32)
-        subindexes = np.zeros((num_objs, self.num_classes), dtype=np.int32)
-        subindexes_flipped = np.zeros((num_objs, self.num_classes), dtype=np.int32)
-        viewindexes_azimuth = np.zeros((num_objs, self.num_classes), dtype=np.float32)
-        viewindexes_azimuth_flipped = np.zeros((num_objs, self.num_classes), dtype=np.float32)
-        viewindexes_elevation = np.zeros((num_objs, self.num_classes), dtype=np.float32)
-        viewindexes_elevation_flipped = np.zeros((num_objs, self.num_classes), dtype=np.float32)
-        viewindexes_rotation = np.zeros((num_objs, self.num_classes), dtype=np.float32)
-        viewindexes_rotation_flipped = np.zeros((num_objs, self.num_classes), dtype=np.float32)
+            subindexes[ix, cls] = subcls
+            subindexes_flipped[ix, cls] = gt_subclasses_flipped[ix]
 
         overlaps = scipy.sparse.csr_matrix(overlaps)
         subindexes = scipy.sparse.csr_matrix(subindexes)
         subindexes_flipped = scipy.sparse.csr_matrix(subindexes_flipped)
-        viewindexes_azimuth = scipy.sparse.csr_matrix(viewindexes_azimuth)
-        viewindexes_azimuth_flipped = scipy.sparse.csr_matrix(viewindexes_azimuth_flipped)
-        viewindexes_elevation = scipy.sparse.csr_matrix(viewindexes_elevation)
-        viewindexes_elevation_flipped = scipy.sparse.csr_matrix(viewindexes_elevation_flipped)
-        viewindexes_rotation = scipy.sparse.csr_matrix(viewindexes_rotation)
-        viewindexes_rotation_flipped = scipy.sparse.csr_matrix(viewindexes_rotation_flipped)
 
         if cfg.IS_RPN:
             if cfg.IS_MULTISCALE:
@@ -224,8 +264,8 @@ class imagenet3d(imdb):
                 feat_stride = 16
                 # faster rcnn region proposal
                 base_size = 16
-                ratios = cfg.TRAIN.RPN_ASPECTS
-                scales = cfg.TRAIN.RPN_SCALES
+                ratios = [3.0, 2.0, 1.5, 1.0, 0.75, 0.5, 0.25]
+                scales = 2**np.arange(1, 6, 0.5)
                 anchors = generate_anchors(base_size, ratios, scales)
                 num_anchors = anchors.shape[0]
 
@@ -277,19 +317,11 @@ class imagenet3d(imdb):
 
         return {'boxes' : boxes,
                 'gt_classes': gt_classes,
-                'gt_viewpoints': viewpoints,
-                'gt_viewpoints_flipped': viewpoints_flipped,
-                'gt_viewindexes_azimuth': viewindexes_azimuth,
-                'gt_viewindexes_azimuth_flipped': viewindexes_azimuth_flipped,
-                'gt_viewindexes_elevation': viewindexes_elevation,
-                'gt_viewindexes_elevation_flipped': viewindexes_elevation_flipped,
-                'gt_viewindexes_rotation': viewindexes_rotation,
-                'gt_viewindexes_rotation_flipped': viewindexes_rotation_flipped,
                 'gt_subclasses': gt_subclasses,
                 'gt_subclasses_flipped': gt_subclasses_flipped,
-                'gt_overlaps' : overlaps,
-                'gt_subindexes': subindexes,
-                'gt_subindexes_flipped': subindexes_flipped,
+                'gt_overlaps': overlaps,
+                'gt_subindexes': subindexes, 
+                'gt_subindexes_flipped': subindexes_flipped, 
                 'flipped' : False}
 
 
@@ -301,7 +333,7 @@ class imagenet3d(imdb):
         This function loads/saves from/to a cache file to speed up future calls.
         """
         cache_file = os.path.join(self.cache_path,
-                                  self.name + '_' + cfg.REGION_PROPOSAL + '_region_proposal_roidb.pkl')
+                                  self.name + '_' + cfg.SUBCLS_NAME + '_' + cfg.REGION_PROPOSAL + '_region_proposal_roidb.pkl')
 
         if os.path.exists(cache_file):
             with open(cache_file, 'rb') as fid:
@@ -309,29 +341,24 @@ class imagenet3d(imdb):
             print '{} roidb loaded from {}'.format(self.name, cache_file)
             return roidb
 
-        if self._image_set != 'test':
+        if self._image_set != 'testing':
             gt_roidb = self.gt_roidb()
 
             print 'Loading region proposal network boxes...'
-            model = cfg.REGION_PROPOSAL
+            if self._image_set == 'trainval':
+                model = cfg.REGION_PROPOSAL + '_trainval/'
+            else:
+                model = cfg.REGION_PROPOSAL + '_train/'
             rpn_roidb = self._load_rpn_roidb(gt_roidb, model)
             print 'Region proposal network boxes loaded'
-            roidb = imdb.merge_roidbs(rpn_roidb, gt_roidb)
+            roidb = datasets.imdb.merge_roidbs(rpn_roidb, gt_roidb)
         else:
             print 'Loading region proposal network boxes...'
-            model = cfg.REGION_PROPOSAL
+            model = cfg.REGION_PROPOSAL + '_trainval/'
             roidb = self._load_rpn_roidb(None, model)
             print 'Region proposal network boxes loaded'
 
         print '{} region proposals per image'.format(self._num_boxes_proposal / len(self.image_index))
-
-        # print out recall
-        if self._image_set != 'test':
-            for i in xrange(1, self.num_classes):
-                print '{}: Total number of boxes {:d}'.format(self.classes[i], self._num_boxes_all[i])
-                print '{}: Number of boxes covered {:d}'.format(self.classes[i], self._num_boxes_covered[i])
-                if self._num_boxes_all[i] > 0:
-                    print '{}: Recall {:f}'.format(self.classes[i], float(self._num_boxes_covered[i]) / float(self._num_boxes_all[i]))
 
         with open(cache_file, 'wb') as fid:
             cPickle.dump(roidb, fid, cPickle.HIGHEST_PROTOCOL)
@@ -339,13 +366,17 @@ class imagenet3d(imdb):
 
         return roidb
 
+
     def _load_rpn_roidb(self, gt_roidb, model):
+        # set the prefix
+        prefix = model
 
         box_list = []
-        for ix, index in enumerate(self.image_index):
-            filename = os.path.join(self._imagenet3d_path, 'region_proposals', model, index + '.txt')
+        for index in self.image_index:
+            filename = os.path.join(self._kitti_tracking_path, 'region_proposals',  prefix, self._image_set, index + '.txt')
             assert os.path.exists(filename), \
-                '{} data not found at: {}'.format(model, filename)
+                'RPN data not found at: {}'.format(filename)
+            print filename
             raw_data = np.loadtxt(filename, dtype=float)
             if len(raw_data.shape) == 1:
                 if raw_data.size == 0:
@@ -353,61 +384,37 @@ class imagenet3d(imdb):
                 else:
                     raw_data = raw_data.reshape((1, 5))
 
-            if model == 'selective_search' or model == 'mcg':
-                x1 = raw_data[:, 1].copy()
-                y1 = raw_data[:, 0].copy()
-                x2 = raw_data[:, 3].copy()
-                y2 = raw_data[:, 2].copy()
-            elif model == 'edge_boxes':
-                x1 = raw_data[:, 0].copy()
-                y1 = raw_data[:, 1].copy()
-                x2 = raw_data[:, 2].copy() + raw_data[:, 0].copy()
-                y2 = raw_data[:, 3].copy() + raw_data[:, 1].copy()
-            elif model == 'rpn_caffenet' or model == 'rpn_vgg16':
-                x1 = raw_data[:, 0].copy()
-                y1 = raw_data[:, 1].copy()
-                x2 = raw_data[:, 2].copy()
-                y2 = raw_data[:, 3].copy()
-            else:
-                assert 1, 'region proposal not supported: {}'.format(model)
-
+            x1 = raw_data[:, 0]
+            y1 = raw_data[:, 1]
+            x2 = raw_data[:, 2]
+            y2 = raw_data[:, 3]
+            score = raw_data[:, 4]
             inds = np.where((x2 > x1) & (y2 > y1))[0]
-            raw_data[:, 0] = x1
-            raw_data[:, 1] = y1
-            raw_data[:, 2] = x2
-            raw_data[:, 3] = y2
             raw_data = raw_data[inds,:4]
-
             self._num_boxes_proposal += raw_data.shape[0]
             box_list.append(raw_data)
-            print 'load {}: {}'.format(model, index)
-
-            if gt_roidb is not None:
-                # compute overlaps between region proposals and gt boxes
-                boxes = gt_roidb[ix]['boxes'].copy()
-                gt_classes = gt_roidb[ix]['gt_classes'].copy()
-                # compute overlap
-                overlaps = bbox_overlaps(raw_data.astype(np.float), boxes.astype(np.float))
-                # check how many gt boxes are covered by anchors
-                if raw_data.shape[0] != 0:
-                    max_overlaps = overlaps.max(axis = 0)
-                    fg_inds = []
-                    for k in xrange(1, self.num_classes):
-                        fg_inds.extend(np.where((gt_classes == k) & (max_overlaps >= cfg.TRAIN.FG_THRESH[k-1]))[0])
-
-                    for i in xrange(self.num_classes):
-                        self._num_boxes_all[i] += len(np.where(gt_classes == i)[0])
-                        self._num_boxes_covered[i] += len(np.where(gt_classes[fg_inds] == i)[0])
 
         return self.create_roidb_from_box_list(box_list, gt_roidb)
 
-
     def evaluate_detections(self, all_boxes, output_dir):
+        # load the mapping for subcalss the alpha (viewpoint)
+        if self._image_set == 'training' and self._seq_name != 'trainval':
+            filename = os.path.join(self._kitti_tracking_path, 'voxel_exemplars', 'train', 'mapping.txt')
+        else:
+            filename = os.path.join(self._kitti_tracking_path, 'voxel_exemplars', 'trainval', 'mapping.txt')
+        assert os.path.exists(filename), 'Path does not exist: {}'.format(filename)
+
+        mapping = np.zeros(self._num_subclasses, dtype=np.float)
+        with open(filename) as f:
+            for line in f:
+                words = line.split()
+                subcls = int(words[0])
+                mapping[subcls] = float(words[3])
 
         # for each image
         for im_ind, index in enumerate(self.image_index):
-            filename = os.path.join(output_dir, index + '.txt')
-            print 'Writing imagenet3d results to file ' + filename
+            filename = os.path.join(output_dir, index[5:] + '.txt')
+            print 'Writing kitti_tracking results to file ' + filename
             with open(filename, 'wt') as f:
                 # for each class
                 for cls_ind, cls in enumerate(self.classes):
@@ -416,37 +423,56 @@ class imagenet3d(imdb):
                     dets = all_boxes[cls_ind][im_ind]
                     if dets == []:
                         continue
-                    # detection and viewpoint
                     for k in xrange(dets.shape[0]):
-                        f.write('{:s} {:f} {:f} {:f} {:f} {:.32f} {:f} {:f} {:f}\n'.format(\
-                                 cls, dets[k, 0], dets[k, 1], dets[k, 2], dets[k, 3], dets[k, 4], dets[k, 6], dets[k, 7], dets[k, 8]))
+                        subcls = int(dets[k, 5])
+                        cls_name = self.classes[self.subclass_mapping[subcls]]
+                        assert (cls_name == cls), 'subclass not in class'
+                        alpha = mapping[subcls]
+                        f.write('{:s} -1 -1 {:f} {:f} {:f} {:f} {:f} -1 -1 -1 -1 -1 -1 -1 {:.32f}\n'.format(\
+                                 cls, alpha, dets[k, 0], dets[k, 1], dets[k, 2], dets[k, 3], dets[k, 4]))
 
     # write detection results into one file
     def evaluate_detections_one_file(self, all_boxes, output_dir):
+        # load the mapping for subcalss the alpha (viewpoint)
+        if self._image_set == 'training' and self._seq_name != 'trainval':
+            filename = os.path.join(self._kitti_tracking_path, 'voxel_exemplars', 'train', 'mapping.txt')
+        else:
+            filename = os.path.join(self._kitti_tracking_path, 'voxel_exemplars', 'trainval', 'mapping.txt')
+        assert os.path.exists(filename), 'Path does not exist: {}'.format(filename)
 
-        # for each class
-        for cls_ind, cls in enumerate(self.classes):
-            if cls == '__background__':
-                continue
-            # open results file
-            filename = os.path.join(output_dir, 'detections_{}.txt'.format(cls))
-            print 'Writing imagenet3d results to file ' + filename
-            with open(filename, 'wt') as f:
-                # for each image
-                for im_ind, index in enumerate(self.image_index):
+        mapping = np.zeros(self._num_subclasses, dtype=np.float)
+        with open(filename) as f:
+            for line in f:
+                words = line.split()
+                subcls = int(words[0])
+                mapping[subcls] = float(words[3])
+
+        # open results file
+        filename = os.path.join(output_dir, self._seq_name+'.txt')
+        print 'Writing all kitti_tracking results to file ' + filename
+        with open(filename, 'wt') as f:
+            # for each image
+            for im_ind, index in enumerate(self.image_index):
+                # for each class
+                for cls_ind, cls in enumerate(self.classes):
+                    if cls == '__background__':
+                        continue
                     dets = all_boxes[cls_ind][im_ind]
                     if dets == []:
                         continue
-                    # detection and viewpoint
                     for k in xrange(dets.shape[0]):
-                        f.write('{:s} {:f} {:f} {:f} {:f} {:.32f} {:f} {:f} {:f}\n'.format(\
-                                 index, dets[k, 0], dets[k, 1], dets[k, 2], dets[k, 3], dets[k, 4], dets[k, 6], dets[k, 7], dets[k, 8]))
+                        subcls = int(dets[k, 5])
+                        cls_name = self.classes[self.subclass_mapping[subcls]]
+                        assert (cls_name == cls), 'subclass not in class'
+                        alpha = mapping[subcls]
+                        f.write('{:d} -1 {:s} -1 -1 {:f} {:f} {:f} {:f} {:f} -1 -1 -1 -1000 -1000 -1000 -10 {:f}\n'.format(\
+                                 im_ind, cls, alpha, dets[k, 0], dets[k, 1], dets[k, 2], dets[k, 3], dets[k, 4]))
 
     def evaluate_proposals(self, all_boxes, output_dir):
         # for each image
         for im_ind, index in enumerate(self.image_index):
-            filename = os.path.join(output_dir, index + '.txt')
-            print 'Writing imagenet3d results to file ' + filename
+            filename = os.path.join(output_dir, index[5:] + '.txt')
+            print 'Writing kitti_tracking results to file ' + filename
             with open(filename, 'wt') as f:
                 # for each class
                 for cls_ind, cls in enumerate(self.classes):
@@ -463,7 +489,7 @@ class imagenet3d(imdb):
         # for each image
         for im_ind, index in enumerate(self.image_index):
             filename = os.path.join(output_dir, index + '.txt')
-            print 'Writing imagenet3d results to file ' + filename
+            print 'Writing kitti_tracking results to file ' + filename
             with open(filename, 'wt') as f:
                 dets = all_boxes[im_ind]
                 if dets == []:
@@ -473,6 +499,6 @@ class imagenet3d(imdb):
 
 
 if __name__ == '__main__':
-    d = imagenet3d('trainval')
+    d = datasets.kitti_tracking('training', '0000')
     res = d.roidb
     from IPython import embed; embed()

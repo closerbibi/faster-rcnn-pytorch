@@ -5,28 +5,36 @@
 # Written by Ross Girshick
 # --------------------------------------------------------
 
-import datasets
-import datasets.pascal_voc
+import xml.dom.minidom as minidom
+
 import os
 import PIL
-import datasets.imdb
-import xml.dom.minidom as minidom
 import numpy as np
 import scipy.sparse
-import scipy.io as sio
-import utils.cython_bbox
-import cPickle
 import subprocess
-from utils.cython_bbox import bbox_overlaps
-from utils.boxes_grid import get_boxes_grid
-from fast_rcnn.config import cfg
+import cPickle
 import math
-from rpn_msr.generate_anchors import generate_anchors
-import sys
+import glob
+import uuid
+import scipy.io as sio
+import xml.etree.ElementTree as ET
 
-class pascal_voc(datasets.imdb):
+from .imdb import imdb
+from .imdb import ROOT_DIR
+from .imdb import MATLAB
+
+from ..utils.cython_bbox import bbox_overlaps
+from ..utils.boxes_grid import get_boxes_grid
+
+# TODO: make fast_rcnn irrelevant
+# >>>> obsolete, because it depends on sth outside of this project
+from ..fast_rcnn.config import cfg
+from ..rpn_msr.generate_anchors import generate_anchors
+# <<<< obsolete
+
+class pascal_voc(imdb):
     def __init__(self, image_set, year, pascal_path=None):
-        datasets.imdb.__init__(self, 'voc_' + year + '_' + image_set)
+        imdb.__init__(self, 'voc_' + year + '_' + image_set)
         self._year = year
         self._image_set = image_set
         self._pascal_path = self._get_default_path() if pascal_path is None \
@@ -111,7 +119,7 @@ class pascal_voc(datasets.imdb):
         """
         Return the default path where PASCAL VOC is expected to be installed.
         """
-        return os.path.join(datasets.ROOT_DIR, 'data', 'PASCAL')
+        return os.path.join(ROOT_DIR, 'data', 'PASCAL')
 
     def gt_roidb(self):
         """
@@ -452,7 +460,7 @@ class pascal_voc(datasets.imdb):
             model = cfg.REGION_PROPOSAL
             rpn_roidb = self._load_rpn_roidb(gt_roidb, model)
             print 'Region proposal network boxes loaded'
-            roidb = datasets.imdb.merge_roidbs(rpn_roidb, gt_roidb)
+            roidb = imdb.merge_roidbs(rpn_roidb, gt_roidb)
         else:
             print 'Loading region proposal network boxes...'
             model = cfg.REGION_PROPOSAL
@@ -518,7 +526,7 @@ class pascal_voc(datasets.imdb):
         if int(self._year) == 2007 or self._image_set != 'test':
             gt_roidb = self.gt_roidb()
             ss_roidb = self._load_selective_search_roidb(gt_roidb)
-            roidb = datasets.imdb.merge_roidbs(gt_roidb, ss_roidb)
+            roidb = imdb.merge_roidbs(gt_roidb, ss_roidb)
         else:
             roidb = self._load_selective_search_roidb(None)
         with open(cache_file, 'wb') as fid:
@@ -560,7 +568,7 @@ class pascal_voc(datasets.imdb):
 
         gt_roidb = self.gt_roidb()
         ss_roidb = self._load_selective_search_IJCV_roidb(gt_roidb)
-        roidb = datasets.imdb.merge_roidbs(gt_roidb, ss_roidb)
+        roidb = imdb.merge_roidbs(gt_roidb, ss_roidb)
         with open(cache_file, 'wb') as fid:
             cPickle.dump(roidb, fid, cPickle.HIGHEST_PROTOCOL)
         print 'wrote ss roidb to {}'.format(cache_file)
@@ -618,7 +626,7 @@ class pascal_voc(datasets.imdb):
         path = os.path.join(os.path.dirname(__file__),
                             'VOCdevkit-matlab-wrapper')
         cmd = 'cd {} && '.format(path)
-        cmd += '{:s} -nodisplay -nodesktop '.format(datasets.MATLAB)
+        cmd += '{:s} -nodisplay -nodesktop '.format(MATLAB)
         cmd += '-r "dbstop if error; '
         cmd += 'voc_eval(\'{:s}\',\'{:s}\',\'{:s}\',\'{:s}\',{:d}); quit;"' \
                .format(self._pascal_path + '/VOCdevkit' + self._year, comp_id,
@@ -670,6 +678,6 @@ class pascal_voc(datasets.imdb):
             self.config['cleanup'] = True
 
 if __name__ == '__main__':
-    d = datasets.pascal_voc('trainval', '2007')
+    d = pascal_voc('trainval', '2007')
     res = d.roidb
     from IPython import embed; embed()

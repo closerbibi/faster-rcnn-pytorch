@@ -1,30 +1,30 @@
+__author__ = 'yuxiang'
+
+import datasets
+import datasets.nthu
 import os
 import PIL
+import datasets.imdb
 import numpy as np
 import scipy.sparse
+from utils.cython_bbox import bbox_overlaps
+from utils.boxes_grid import get_boxes_grid
 import subprocess
 import cPickle
+from fast_rcnn.config import cfg
 import math
-import glob
+from rpn_msr.generate_anchors import generate_anchors
 
-from .imdb import imdb
-from .imdb import ROOT_DIR
-
-# TODO: make fast_rcnn irrelevant
-# >>>> obsolete, because it depends on sth outside of this project
-from ..fast_rcnn.config import cfg
-# <<<< obsolete
-
-class nissan(imdb):
-    def __init__(self, image_set, nissan_path=None):
-        imdb.__init__(self, 'nissan_' + image_set)
+class nthu(datasets.imdb):
+    def __init__(self, image_set, nthu_path=None):
+        datasets.imdb.__init__(self, 'nthu_' + image_set)
         self._image_set = image_set
-        self._nissan_path = self._get_default_path() if nissan_path is None \
-                            else nissan_path
-        self._data_path = os.path.join(self._nissan_path, 'Images')
+        self._nthu_path = self._get_default_path() if nthu_path is None \
+                            else nthu_path
+        self._data_path = os.path.join(self._nthu_path, 'data')
         self._classes = ('__background__', 'Car', 'Pedestrian', 'Cyclist')
         self._class_to_ind = dict(zip(self.classes, xrange(self.num_classes)))
-        self._image_ext = '.png'
+        self._image_ext = '.jpg'
         self._image_index = self._load_image_set_index()
         # Default to roidb handler
         if cfg.IS_RPN:
@@ -36,7 +36,7 @@ class nissan(imdb):
         self._num_subclasses = 227 + 36 + 36 + 1
 
         # load the mapping for subcalss to class
-        filename = os.path.join(self._nissan_path, 'mapping.txt')
+        filename = os.path.join(self._nthu_path, 'mapping.txt')
         assert os.path.exists(filename), 'Path does not exist: {}'.format(filename)
         
         mapping = np.zeros(self._num_subclasses, dtype=np.int)
@@ -54,8 +54,8 @@ class nissan(imdb):
         self._num_boxes_covered = np.zeros(self.num_classes, dtype=np.int)
         self._num_boxes_proposal = 0
 
-        assert os.path.exists(self._nissan_path), \
-                'Nissan path does not exist: {}'.format(self._nissan_path)
+        assert os.path.exists(self._nthu_path), \
+                'NTHU path does not exist: {}'.format(self._nthu_path)
         assert os.path.exists(self._data_path), \
                 'Path does not exist: {}'.format(self._data_path)
 
@@ -91,9 +91,9 @@ class nissan(imdb):
 
     def _get_default_path(self):
         """
-        Return the default path where NISSAN is expected to be installed.
+        Return the default path where nthu is expected to be installed.
         """
-        return os.path.join(ROOT_DIR, 'data', 'NISSAN')
+        return os.path.join(datasets.ROOT_DIR, 'data', 'NTHU')
 
 
     def gt_roidb(self):
@@ -139,7 +139,7 @@ class nissan(imdb):
 
         box_list = []
         for index in self.image_index:
-            filename = os.path.join(self._nissan_path, 'region_proposals',  prefix, self._image_set, index + '.txt')
+            filename = os.path.join(self._nthu_path, 'region_proposals',  prefix, self._image_set, index + '.txt')
             assert os.path.exists(filename), \
                 'RPN data not found at: {}'.format(filename)
             raw_data = np.loadtxt(filename, dtype=float)
@@ -163,7 +163,7 @@ class nissan(imdb):
 
     def evaluate_detections(self, all_boxes, output_dir):
         # load the mapping for subcalss the alpha (viewpoint)
-        filename = os.path.join(self._nissan_path, 'mapping.txt')
+        filename = os.path.join(self._nthu_path, 'mapping.txt')
         assert os.path.exists(filename), \
                 'Path does not exist: {}'.format(filename)
 
@@ -177,7 +177,7 @@ class nissan(imdb):
         # for each image
         for im_ind, index in enumerate(self.image_index):
             filename = os.path.join(output_dir, index + '.txt')
-            print 'Writing NISSAN results to file ' + filename
+            print 'Writing nthu results to file ' + filename
             with open(filename, 'wt') as f:
                 # for each class
                 for cls_ind, cls in enumerate(self.classes):
@@ -198,7 +198,7 @@ class nissan(imdb):
     def evaluate_detections_one_file(self, all_boxes, output_dir):
         # open results file
         filename = os.path.join(output_dir, 'detections.txt')
-        print 'Writing all NISSAN results to file ' + filename
+        print 'Writing all nthu results to file ' + filename
         with open(filename, 'wt') as f:
             # for each image
             for im_ind, index in enumerate(self.image_index):
@@ -220,7 +220,7 @@ class nissan(imdb):
         # for each image
         for im_ind, index in enumerate(self.image_index):
             filename = os.path.join(output_dir, index + '.txt')
-            print 'Writing NISSAN results to file ' + filename
+            print 'Writing nthu results to file ' + filename
             with open(filename, 'wt') as f:
                 # for each class
                 for cls_ind, cls in enumerate(self.classes):
@@ -237,7 +237,7 @@ class nissan(imdb):
         # for each image
         for im_ind, index in enumerate(self.image_index):
             filename = os.path.join(output_dir, index + '.txt')
-            print 'Writing NISSAN results to file ' + filename
+            print 'Writing nthu results to file ' + filename
             with open(filename, 'wt') as f:
                 dets = all_boxes[im_ind]
                 if dets == []:
@@ -247,6 +247,6 @@ class nissan(imdb):
 
 
 if __name__ == '__main__':
-    d = nissan('2015-10-21-16-25-12')
+    d = datasets.nthu('71')
     res = d.roidb
     from IPython import embed; embed()

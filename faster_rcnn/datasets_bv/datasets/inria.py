@@ -8,7 +8,6 @@
 # Written by Ross Girshick
 # --------------------------------------------------------
 
-#import datasets
 #import datasets.inria
 #from .inria import inria
 import os
@@ -23,6 +22,8 @@ from ..utils import cython_bbox
 import cPickle
 import subprocess
 import pdb
+import uuid
+from voc_eval import voc_eval
 
 #class inria(datasets.imdb.imdb):
 class inria(imdb):
@@ -31,27 +32,29 @@ class inria(imdb):
         self._image_set = image_set
         self._devkit_path = devkit_path
         self._data_path = os.path.join(self._devkit_path, 'data', 'DIRE')
-        
+
         self._classes = ('__background__', # always index 0
-                         'chair', 'table', 'sofa', 'toilet', 'bed')
-        self._wnid = (0,5,19,83,124,157)
-        '''
-        self._classes = ('__background__', # always index 0
-                         'chair')
-        self._wnid = (0,5)
-        '''
+            'bathtub', 'bed', 'bookshelf', 'box', 'chair', 'counter', 'desk',                                                                                               
+            'door', 'dresser', 'garbage_bin', 'lamp', 'monitor', 'night_stand',
+            'pillow', 'sink', 'sofa', 'table', 'tv', 'toilet');
+
+        self._wnid = (0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19)
+
         self._class_to_ind = dict(zip(self.classes, xrange(self.num_classes)))
         self._wnid_to_ind = dict(zip(self._wnid, xrange(self.num_classes)))
         self._image_ext = ['.png'] #npy
         self._image_index = self._load_image_set_index()
-        #pdb.set_trace()
         # Default to roidb handler
         #self._roidb_handler = self.selective_search_roidb
         self._roidb_handler = self.gt_roidb
+        #self._salt = str(uuid.uuid4())
+        self._salt = str(os.getpid())
+        self._comp_id = 'comp4'
         # Specific config options
         self.config = {'cleanup'  : True,
                        'use_salt' : True,
                        'top_k'    : 2000,#,
+                       'matlab_eval' : False,
                        'use_diff' : False,
                        'rpn_file' : None}
 
@@ -110,7 +113,6 @@ class inria(imdb):
         with open(cache_file, 'wb') as fid:
             cPickle.dump(gt_roidb, fid, cPickle.HIGHEST_PROTOCOL)
         print 'wrote gt roidb to {}'.format(cache_file)
-        #pdb.set_trace()
         return gt_roidb
 
     def selective_search_roidb(self):
@@ -144,23 +146,18 @@ class inria(imdb):
 
     def rpn_roidb(self):
         gt_roidb = self.gt_roidb()
-        #pdb.set_trace()
         #rpn_roidb = self._load_rpn_roidb(gt_roidb)
         roidb = datasets.imdb.merge_roidbs(gt_roidb, rpn_roidb)
         #roidb = self._load_rpn_roidb(None)
         return roidb
 
     def _load_rpn_roidb(self, gt_roidb):
-        #pdb.set_trace()
         filename = self.config['rpn_file']
-        #pdb.set_trace()
         print 'loading {}'.format(filename)
         assert os.path.exists(filename), \
                'rpn data not found at: {}'.format(filename)
         with open(filename, 'rb') as f:
-            #pdb.set_trace()
             box_list = cPickle.load(f)
-        #pdb.set_trace()
         return self.create_roidb_from_box_list(box_list, gt_roidb)
 
     def _load_selective_search_roidb(self, gt_roidb):
@@ -262,20 +259,17 @@ class inria(imdb):
         use_salt = self.config['use_salt']
         comp_id = 'comp4'
         if use_salt:
-            comp_id += '-{}'.format(os.getpid())
+            comp_id += '_{}'.format(os.getpid())
 
         # VOCdevkit/results/comp4-44503_det_test_aeroplane.txt
         #path = os.path.join(self._devkit_path, 'results', self.name, comp_id + '_')
-        path = os.path.join(self._devkit_path, 'result', self.name, save_name, result_name)
-        #pdb.set_trace()
+        path = os.path.join(self._devkit_path, 'results', self.name, save_name, result_name)
         if not os.path.exists(path):
             os.makedirs(path)
-        #path = os.path.join(path, comp_id + '_')
         for cls_ind, cls in enumerate(self.classes):
             if cls == '__background__':
                 continue
             print 'Writing {} results file'.format(cls)
-            #pdb.set_trace()
             #filename = path + 'det_' + self._image_set + '_' + cls + '.txt'
             filename = path + '/' + cls + '_' + result_name + '.txt'
             with open(filename, 'wt') as f:
@@ -289,27 +283,113 @@ class inria(imdb):
                                 format(index, dets[k, -1],
                                        dets[k, 0] + 1, dets[k, 1] + 1,
                                        dets[k, 2] + 1, dets[k, 3] + 1))
-        #pdb.set_trace()
         return comp_id
 
     def _do_matlab_eval(self, comp_id, output_dir='output'):
-        pdb.set_trace()
         rm_results = self.config['cleanup']
-        path = os.path.join(os.path.dirname(__file__), 'VOCdevkit-matlab-wrapper')
-        pdb.set_trace()
+
+        path = os.path.join(os.path.dirname(__file__),
+                            'VOCdevkit-matlab-wrapper')
         cmd = 'cd {} && '.format(path)
         cmd += '{:s} -nodisplay -nodesktop '.format(datasets.MATLAB)
         cmd += '-r "dbstop if error; '
-        cmd += 'setenv(\'LC_ALL\',\'C\'); voc_eval(\'{:s}\',\'{:s}\',\'{:s}\',\'{:s}\',{:d}); quit;"' \
+        cmd += 'setenv(\'LC_ALL\',\'C\'); voc_eval(\'{:s}\',\'{:s}\',\'{:s}\',\'{:s}\'); quit;"' \
                .format(self._devkit_path, comp_id,
-                       self._image_set, output_dir, int(rm_results))
+                       self._image_set, output_dir)
         print('Running:\n{}'.format(cmd))
-        pdb.set_trace()
         status = subprocess.call(cmd, shell=True)
 
-    def evaluate_detections(self, all_boxes, result_name, output_dir):
-        comp_id = self._write_inria_results_file(all_boxes, result_name)
+    """
+    def evaluate_detections(self, all_boxes, output_dir):
+        comp_id = self._write_inria_results_file(all_boxes)
         self._do_matlab_eval(comp_id, output_dir)
+    """
+    def evaluate_detections(self, all_boxes, output_dir, save_name, result_name):
+        comp_id = self._write_inria_results_file(all_boxes, save_name, result_name)
+        self._do_python_eval(save_name, result_name, output_dir)
+        if self.config['matlab_eval']:
+            self._do_matlab_eval(output_dir)
+        if self.config['cleanup']:
+            for cls in self._classes:
+                if cls == '__background__':
+                    continue
+                filename = self._get_voc_results_file_template(save_name,result_name).format(cls)
+                os.remove(filename)
+
+    def _get_comp_id(self):
+        comp_id = (self._comp_id + '_' + self._salt if self.config['use_salt']
+            else self._comp_id)
+        return comp_id
+
+    def _get_voc_results_file_template(self,save_name,result_name):
+        # VOCdevkit/results/VOC2007/Main/<comp_id>_det_test_aeroplane.txt
+        #filename = self._get_comp_id() + '_det_' + self._image_set + '_{:s}.txt'
+        filename = save_name + '/' + result_name + '/' + '{:s}' + '_' + result_name + '.txt'
+        path = os.path.join(
+            self._devkit_path,
+            'results',
+            self.name,
+            filename)
+        return path
+
+    def _do_python_eval(self, save_name,result_name, output_dir = 'output'):
+        annopath = os.path.join(
+            self._devkit_path,
+            'data',
+            'DIRE',
+            'Annotations',
+            '{:s}.txt')
+        imagesetfile = os.path.join(
+            self._devkit_path,
+            'data',
+            'DIRE',
+            'ImageSets',
+            self._image_set + '.txt')
+        cachedir = os.path.join(self._devkit_path, 'data', 'cache')
+        aps = []
+        # The PASCAL VOC metric changed in 2010
+        use_07_metric = True
+        print 'VOC07 metric? ' + ('Yes' if use_07_metric else 'No')
+        if not os.path.isdir(output_dir):
+            os.mkdir(output_dir)
+
+        fid_path = os.path.join(self._devkit_path, 'results', self.name, save_name, result_name)
+        if not os.path.exists(fid_path):
+            os.makedirs(fid_path) 
+        fid_result = open(fid_path+'/results.txt','w')
+        for i, cls in enumerate(self._classes):
+            if cls == '__background__':
+                continue
+            filename = self._get_voc_results_file_template(save_name,result_name).format(cls)
+            rec, prec, ap, npos = voc_eval(
+                filename, annopath, imagesetfile, cls, cachedir, ovthresh=0.5,
+                use_07_metric=use_07_metric)
+            aps += [ap]
+            try:
+                print('AP, maxREC for {} = {:.4f}, {:.4f} (all gt box: {:d})'.format(cls, ap, rec[-1], npos))
+                fid_result.write('AP, maxREC for {} = {:.4f}, {:.4f} (all gt box: {:d})\n'.format(cls, ap, rec[-1], npos))
+            except:
+                print('AP, maxREC for {} = {:.4f}, {:.4f} (all gt box: {:d})'.format(cls, ap, rec, npos))
+                fid_result.write('AP, maxREC for {} = {:.4f}, {:.4f} (all gt box: {:d})\n'.format(cls, ap, rec, npos))
+                
+            with open(os.path.join(output_dir, cls + '_pr.pkl'), 'w') as f:
+                cPickle.dump({'rec': rec, 'prec': prec, 'ap': ap}, f)
+        print('Mean AP = {:.4f}'.format(np.mean(aps)))
+        fid_result.write('Mean AP = {:.4f}'.format(np.mean(aps)))
+        fid_result.close()
+        print('~~~~~~~~')
+        print('Results:')
+        for ap in aps:
+            print('{:.3f}'.format(ap))
+        print('{:.3f}'.format(np.mean(aps)))
+        print('~~~~~~~~')
+        print('')
+        print('--------------------------------------------------------------')
+        print('Results computed with the **unofficial** Python eval code.')
+        print('Results should be very close to the official MATLAB eval code.')
+        print('Recompute with `./tools/reval.py --matlab ...` for your paper.')
+        print('-- Thanks, The Management')
+        print('--------------------------------------------------------------')
 
     def competition_mode(self, on):
         if on:
