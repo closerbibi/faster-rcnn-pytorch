@@ -1,0 +1,11 @@
+*.pyc
+*.sw*
+tb-logs*/
+log/
+models/
+resu*/
+data/
+*mat
+*jpg
+*png
+*pkl
