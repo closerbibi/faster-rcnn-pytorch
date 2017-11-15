@@ -110,8 +110,8 @@ params = list(net.parameters())
 require_update = False
 optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, params), lr=lr)
 #optimizer = torch.optim.SGD(params[8:], lr=lr, momentum=momentum, weight_decay=weight_decay)
-optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, params), \
-                        lr=lr, momentum=momentum, weight_decay=weight_decay)
+#optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, params), \
+#                        lr=lr, momentum=momentum, weight_decay=weight_decay)
 if not os.path.exists(output_dir):
     os.makedirs(output_dir)
 
