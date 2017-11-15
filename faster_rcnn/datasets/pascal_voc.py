@@ -18,7 +18,7 @@ import glob
 import uuid
 import scipy.io as sio
 import xml.etree.ElementTree as ET
-import pdb
+
 from .imdb import imdb
 from .imdb import ROOT_DIR
 import ds_utils
@@ -67,7 +67,7 @@ class pascal_voc(imdb):
             'VOCdevkit path does not exist: {}'.format(self._devkit_path)
         assert os.path.exists(self._data_path), \
             'Path does not exist: {}'.format(self._data_path)
-        #pdb.set_trace()
+
     def image_path_at(self, i):
         """
         Return the absolute path to image i in the image sequence.

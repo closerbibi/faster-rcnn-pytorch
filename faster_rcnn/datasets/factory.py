@@ -10,22 +10,16 @@
 __sets = {}
 
 import numpy as np
-import pdb
+
 from .pascal_voc import pascal_voc
 from .imagenet3d import imagenet3d
 from .kitti import kitti
 from .kitti_tracking import kitti_tracking
 from .nthu import nthu
 from .coco import coco
-from .inria import inria
 from .kittivoc import kittivoc
 
 
-inria_devkit_path = './'
-for split in ['train', 'test']:
-    name = '{}_{}'.format('inria', split)
-    __sets[name] = (lambda split=split: inria(split, inria_devkit_path))
-#pdb.set_trace()
 def _selective_search_IJCV_top_k(split, year, top_k):
     """Return an imdb that uses the top k proposals from the selective search
     IJCV code.
@@ -80,7 +74,6 @@ def get_imdb(name):
     if not __sets.has_key(name):
         # print (list_imdbs())
         raise KeyError('Unknown dataset: {}'.format(name))
-    #pdb.set_trace()
     return __sets[name]()
 
 
