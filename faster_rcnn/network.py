@@ -3,6 +3,7 @@ import torch.nn as nn
 from torch.autograd import Variable
 import numpy as np
 import pdb
+from pprint import pprint
 
 
 class Conv2d(nn.Module):
@@ -99,7 +100,7 @@ def load_resnet_weight(net, weight_path):
         if 'fc_feature' in name:
             adapted_name = name.split('fc_feature.')[1]
         elif 'layer' in name:
-            adapted_name = name.split('rpn.features')[1]
+            adapted_name = name.split('rpn.features.')[1]
         else:
             print('name or dim. inconsistent {}, passing'.format(name))
             continue

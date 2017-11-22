@@ -38,7 +38,6 @@ class BaseRefineNet3Cascade(nn.Module):
         """
         super(BaseRefineNet3Cascade, self).__init__()
 
-        input_size = 256
         resnet = resnet_factory()
 
         self.layer1 = nn.Sequential(
@@ -71,12 +70,13 @@ class BaseRefineNet3Cascade(nn.Module):
 
         # (features, input_size // 8), (features, input_size // 4):
         # ((256,     32),              (256,      64))
+        # gabriel: incase encounter odd numberi, use 2 or 1
         self.refinenet1 = RefineNetBlock(
-            features, (features, input_size // 4))
+            features, (features, 1))
         self.refinenet2 = RefineNetBlock(
-            features, (features, input_size // 4), (features, input_size // 8))
+            features, (features, 2), (features, 1))
         self.refinenet3 = RefineNetBlock(
-            features, (features, input_size // 8), (features, input_size // 16))
+            features, (features, 2), (features, 1))
 
         self.output_conv = nn.Sequential(
             ResidualConvUnit(features),
@@ -100,8 +100,8 @@ class BaseRefineNet3Cascade(nn.Module):
         layer_3_rn = self.layer3_rn(layer_3)
 
         path_1 = self.refinenet1(layer_1_rn)
-        path_2 = self.refinenet2(path_1, layer_2_rn)
-        path_3 = self.refinenet3(path_2, layer_3_rn)
+        path_2 = self.refinenet2(layer_2_rn, path_1)
+        path_3 = self.refinenet3(layer_3_rn, path_2)
         path_4 = self.output_conv(path_3)
         out = self.out_rn(path_4)
         return out

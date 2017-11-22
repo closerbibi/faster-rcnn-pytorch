@@ -46,7 +46,8 @@ class RPN(nn.Module):
         def set_bn_fix(m):
             classname = m.__class__.__name__
             if classname.find('BatchNorm') != -1:
-                for p in m.parameters(): p.requires_grad=False
+                pass # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                #for p in m.parameters(): p.requires_grad=False
         if not cfg.TRAIN.BN_TRAIN:
             self.features.apply(set_bn_fix)
 
@@ -227,7 +228,8 @@ class FasterRCNN(nn.Module):
         def set_bn_fix(m):
             classname = m.__class__.__name__
             if classname.find('BatchNorm') != -1:
-                for p in m.parameters(): p.requires_grad=False
+                pass # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                #for p in m.parameters(): p.requires_grad=False
         if not cfg.TRAIN.BN_TRAIN:
             self.fc_feature.apply(set_bn_fix)
 

@@ -68,7 +68,7 @@ __C.TRAIN.KERNEL_SIZE = 5
 __C.TRAIN.ASPECTS = (1, 0.75, 0.5, 0.25)
 
 # Images to use per minibatch
-__C.TRAIN.IMS_PER_BATCH = 2
+__C.TRAIN.IMS_PER_BATCH = 1
 
 # Minibatch size (number of regions of interest [ROIs])
 __C.TRAIN.BATCH_SIZE = 128
