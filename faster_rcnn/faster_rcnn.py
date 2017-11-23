@@ -17,10 +17,10 @@ import network
 from network import Conv2d, FC
 # from roi_pooling.modules.roi_pool_py import RoIPool
 from roi_pooling.modules.roi_pool import RoIPool
-from vgg16 import VGG16
 from resnet import resnet101
 from resnet import resfc7
 from fast_rcnn.config import cfg
+from refinenet_3cascade import RefineNet3Cascade
 
 
 def nms_detections(pred_boxes, scores, nms_thresh, inds=None):
@@ -39,17 +39,10 @@ class RPN(nn.Module):
     def __init__(self):
         super(RPN, self).__init__()
 
-        # VGG16
-        #self.features = VGG16(bn=False)
-        #self.conv1 = Conv2d(512, 512, 3, same_padding=True)
-        #self.score_conv = Conv2d(512, len(self.anchor_scales) * 3 * 2, 1, relu=False, same_padding=False)
-        #self.bbox_conv = Conv2d(512, len(self.anchor_scales) * 3 * 4, 1, relu=False, same_padding=False)
-        
-        # ResNet 152, gabriel
-        # remove AVG pooling
-        self.features = resnet101()
+        # ResNet 101, gabriel
+        self.features = RefineNet3Cascade()
         # gabriel
-        # Set batchnorm always in eval mode during training
+        # Set batchnorm always fixed during training
         def set_bn_fix(m):
             classname = m.__class__.__name__
             if classname.find('BatchNorm') != -1:

@@ -96,8 +96,18 @@ def load_resnet_weight(net, weight_path):
     #    if 'conv' in name:
     #        print(name)
     for name, val in net_own_state.items():
-        if 'rpn.conv1.conv' in name:
-            adapted_name = 'rpn_net.'+name.split('.')[-1]
+        if 'rpn.features.layer1.0.weight' in name:
+            adapted_name = 'resnet.conv1.weight'
+        elif 'rpn.features.layer1.1.weight' in name:
+            adapted_name = 'resnet.bn1.weight'
+        elif 'rpn.features.layer1.1.bias' in name:
+            adapted_name = 'resnet.bn1.bias'
+        elif 'rpn.features.layer1.1.running_mean' in name:
+            adapted_name = 'resnet.bn1.running_mean'
+        elif 'rpn.features.layer1.1.running_var' in name:
+            adapted_name = 'resnet.bn1.running_var'
+        elif 'layer1.4.' in name:
+            adapted_name = 'resnet.layer1.' + name.split('.4.')[-1]
         elif 'rpn.score_conv' in name:
             adapted_name = 'rpn_cls_score_net.'+name.split('.')[-1]
         elif 'rpn.bbox_conv' in name:
@@ -110,19 +120,16 @@ def load_resnet_weight(net, weight_path):
             print('name or dim. inconsistent {}, passing'.format(name))
             continue
         if adapted_name not in params.keys():
-            print('{} not in the weight file'.format(name))
+            print('{} is not in the weight file, passing'.format(name))
             continue
-        try:
-            val = val.data
-        except:
-            pass
+        #try:
+        #    val = val.data
+        #except:
+        #    pass
         remain_keys_p.remove(adapted_name)
         remain_keys_n.remove(name)
         #assert(net_own_state[name].size() == params[adapted_name].size())
-        try:
-            net_own_state[name].copy_(params[adapted_name])
-        except:
-            pdb.set_trace()
+        net_own_state[name].copy_(params[adapted_name])
 
 def np_to_variable(x, is_cuda=True, dtype=torch.FloatTensor):
     v = Variable(torch.from_numpy(x).type(dtype))
